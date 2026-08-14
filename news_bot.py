@@ -3,24 +3,25 @@ from bs4 import BeautifulSoup
 import time
 import os
 import json
+from deep_translator import GoogleTranslator  # فعال‌سازی ترجمه
 
 # ========== گرفتن توکن و چت آیدی از Secrets گیت‌هاب ==========
 BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-# ========== مشخصات سایت تسنیم - بخش سیاسی (آدرس اصلاح شده) ==========
+# ========== مشخصات سایت Ynet (بخش سیاسی) ==========
 SITE_CONFIG = {
-    "name": "تسنیم - سیاسی",
-    "url": "https://www.tasnimnews.com/fa/service/politics",  # آدرس درست و زنده
-    "article_selector": "div.item",  # سلکتور هر خبر در صفحه جدید
-    "link_selector": "div.item a",   # سلکتور لینک خبر
-    "title_selector": "h1.entry-title",
-    "lead_selector": "div.summary p, div.lead p",
-    "image_selector": "div.article-image img",
-    "body_selector": "div.article-body p"
+    "name": "Ynet - سیاسی",
+    "url": "https://www.ynetnews.com/category/184",  # دسته‌بندی سیاسی و دیپلماسی
+    "article_selector": "div.article-item",  # هر خبر در این تگ قرار دارد
+    "link_selector": "a",  # لینک خبر
+    "title_selector": "h1.article-header",  # تیتر اصلی در صفحه داخلی
+    "lead_selector": "div.sub-title, div.header-text",  # لیدر یا زیرتیتر
+    "image_selector": "div.main-image img, div.image-wrap img",  # عکس
+    "body_selector": "div.text-wrap div.paragraphs p"  # متن کامل خبر
 }
 
-# ========== مدیریت خبرهای تکراری با فایل کش ==========
+# ========== مدیریت خبرهای تکراری ==========
 SENT_FILE = "sent_news.json"
 
 def load_sent_urls():
@@ -35,8 +36,8 @@ def save_sent_urls(sent_set):
 
 sent_urls = load_sent_urls()
 
-# ========== استخراج اخبار از تسنیم ==========
-def fetch_tasnim_news():
+# ========== استخراج اخبار از Ynet ==========
+def fetch_ynet_news():
     try:
         response = requests.get(SITE_CONFIG["url"], timeout=15, headers={
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
@@ -51,11 +52,11 @@ def fetch_tasnim_news():
                 href = link_tag.get("href")
                 if href:
                     if not href.startswith("http"):
-                        href = "https://www.tasnimnews.com" + href
+                        href = "https://www.ynetnews.com" + href
                     news_list.append(href)
         return news_list
     except Exception as e:
-        print(f"❌ خطا در دریافت اخبار تسنیم: {e}")
+        print(f"❌ خطا در دریافت اخبار Ynet: {e}")
         return []
 
 def extract_article_detail(url):
@@ -66,18 +67,18 @@ def extract_article_detail(url):
         response.encoding = "utf-8"
         soup = BeautifulSoup(response.text, "html.parser")
         
-        title_tag = soup.select_one("h1.entry-title")
+        title_tag = soup.select_one("h1.article-header")
         title = title_tag.get_text(strip=True) if title_tag else "بدون تیتر"
         
-        lead_tag = soup.select_one("div.summary p") or soup.select_one("div.lead p")
+        lead_tag = soup.select_one("div.sub-title") or soup.select_one("div.header-text")
         lead = lead_tag.get_text(strip=True) if lead_tag else ""
         
-        img_tag = soup.select_one("div.article-image img")
+        img_tag = soup.select_one("div.main-image img") or soup.select_one("div.image-wrap img")
         img_url = img_tag.get("src") if img_tag else None
         if img_url and not img_url.startswith("http"):
-            img_url = "https://www.tasnimnews.com" + img_url
+            img_url = "https://www.ynetnews.com" + img_url
         
-        body_paragraphs = soup.select("div.article-body p")
+        body_paragraphs = soup.select("div.text-wrap div.paragraphs p")
         full_text = " ".join([p.get_text(strip=True) for p in body_paragraphs[:3]])
         if not full_text:
             full_text = title + " " + lead
@@ -93,12 +94,30 @@ def extract_article_detail(url):
         print(f"❌ خطا در استخراج جزئیات خبر {url}: {e}")
         return None
 
-# ========== ارسال به تلگرام ==========
+# ========== ترجمه و ارسال به تلگرام ==========
 def send_to_telegram(article):
-    original_text = f"📰 {article['title']}\n{article['lead']}"
-    full_text = article["full_text"][:500]
-    final_caption = f"{original_text}\n\nمتن کامل:\n{full_text}\n\n#سیاسی"
+    try:
+        translator = GoogleTranslator(source='auto', target='fa')
+        
+        # ترجمه تیتر و لیدر به فارسی
+        translated_title = translator.translate(article['title'])
+        translated_lead = translator.translate(article['lead'])
+        
+        # ساخت متن اصلی (به زبان اصلی)
+        original_text = f"📰 {article['title']}\n{article['lead']}"
+        
+        # ساخت ترجمه فارسی
+        translated_text = f"🇮🇷 ترجمه فارسی:\n{translated_title}\n{translated_lead}"
+        
+        # ترکیب نهایی با هشتگ
+        final_caption = f"{original_text}\n\n{translated_text}\n\n#سیاسی"
+        
+    except Exception as e:
+        print(f"⚠️ خطا در ترجمه: {e}")
+        # اگر ترجمه خطا داد، همان متن اصلی را بدون ترجمه بفرست
+        final_caption = f"📰 {article['title']}\n{article['lead']}\n\n#سیاسی"
     
+    # ارسال به تلگرام
     if article["img_url"]:
         send_url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
         payload = {
@@ -127,8 +146,8 @@ def send_to_telegram(article):
 
 # ========== اجرای یک‌باره ==========
 def run_once():
-    print("🚀 شروع خزش از تسنیم...")
-    article_links = fetch_tasnim_news()
+    print("🚀 شروع خزش از Ynet...")
+    article_links = fetch_ynet_news()
     print(f"📌 تعداد اخبار پیدا شده: {len(article_links)}")
     
     for link in article_links:
@@ -138,7 +157,7 @@ def run_once():
         article_data = extract_article_detail(link)
         if article_data:
             send_to_telegram(article_data)
-            time.sleep(2)
+            time.sleep(3)  # تأخیر بیشتر برای جلوگیری از محدودیت ترجمه
     
     print("✅ عملیات امروز انجام شد!")
 
