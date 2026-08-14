@@ -3,22 +3,22 @@ from bs4 import BeautifulSoup
 import time
 import os
 import json
-from deep_translator import GoogleTranslator  # فعال‌سازی ترجمه
+from deep_translator import GoogleTranslator
 
 # ========== گرفتن توکن و چت آیدی از Secrets گیت‌هاب ==========
 BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-# ========== مشخصات سایت Ynet (بخش سیاسی) ==========
+# ========== مشخصات سایت Ynet با سلکتورهای جدید ==========
 SITE_CONFIG = {
-    "name": "Ynet - سیاسی",
-    "url": "https://www.ynetnews.com/category/184",  # دسته‌بندی سیاسی و دیپلماسی
-    "article_selector": "div.article-item",  # هر خبر در این تگ قرار دارد
-    "link_selector": "a",  # لینک خبر
-    "title_selector": "h1.article-header",  # تیتر اصلی در صفحه داخلی
-    "lead_selector": "div.sub-title, div.header-text",  # لیدر یا زیرتیتر
-    "image_selector": "div.main-image img, div.image-wrap img",  # عکس
-    "body_selector": "div.text-wrap div.paragraphs p"  # متن کامل خبر
+    "name": "Ynet - اخبار سیاسی",
+    "url": "https://www.ynet.co.il/home/0,7340,L-8,00.html",  # لینک جدیدی که دادید
+    "article_selector": "div.article-item, div.accordeon, div[class*='article']",  # سلکتور کلی برای هر خبر
+    "link_selector": "a[href*='/news/article/']",  # لینک خبر
+    "title_selector": "#ArticleHeaderComponent > div.mainTitleWrapper > h1",  # سلکتور تیتر
+    "lead_selector": "#ArticleHeaderComponent > div.subTitleWrapper",  # سلکتور لیدر
+    "image_selector": "div.mainImage img, div.imageWrap img",  # سلکتور عکس
+    "body_selector": "div.textWrap div.paragraphs p"  # سلکتور متن
 }
 
 # ========== مدیریت خبرهای تکراری ==========
@@ -52,7 +52,7 @@ def fetch_ynet_news():
                 href = link_tag.get("href")
                 if href:
                     if not href.startswith("http"):
-                        href = "https://www.ynetnews.com" + href
+                        href = "https://www.ynet.co.il" + href
                     news_list.append(href)
         return news_list
     except Exception as e:
@@ -67,18 +67,19 @@ def extract_article_detail(url):
         response.encoding = "utf-8"
         soup = BeautifulSoup(response.text, "html.parser")
         
-        title_tag = soup.select_one("h1.article-header")
+        # استفاده از سلکتورهای جدید برای تیتر و زیرتیتر
+        title_tag = soup.select_one("#ArticleHeaderComponent > div.mainTitleWrapper > h1")
         title = title_tag.get_text(strip=True) if title_tag else "بدون تیتر"
         
-        lead_tag = soup.select_one("div.sub-title") or soup.select_one("div.header-text")
+        lead_tag = soup.select_one("#ArticleHeaderComponent > div.subTitleWrapper")
         lead = lead_tag.get_text(strip=True) if lead_tag else ""
         
-        img_tag = soup.select_one("div.main-image img") or soup.select_one("div.image-wrap img")
+        img_tag = soup.select_one("div.mainImage img, div.imageWrap img")
         img_url = img_tag.get("src") if img_tag else None
         if img_url and not img_url.startswith("http"):
-            img_url = "https://www.ynetnews.com" + img_url
+            img_url = "https://www.ynet.co.il" + img_url
         
-        body_paragraphs = soup.select("div.text-wrap div.paragraphs p")
+        body_paragraphs = soup.select("div.textWrap div.paragraphs p")
         full_text = " ".join([p.get_text(strip=True) for p in body_paragraphs[:3]])
         if not full_text:
             full_text = title + " " + lead
@@ -98,26 +99,17 @@ def extract_article_detail(url):
 def send_to_telegram(article):
     try:
         translator = GoogleTranslator(source='auto', target='fa')
-        
-        # ترجمه تیتر و لیدر به فارسی
         translated_title = translator.translate(article['title'])
         translated_lead = translator.translate(article['lead'])
         
-        # ساخت متن اصلی (به زبان اصلی)
         original_text = f"📰 {article['title']}\n{article['lead']}"
-        
-        # ساخت ترجمه فارسی
         translated_text = f"🇮🇷 ترجمه فارسی:\n{translated_title}\n{translated_lead}"
-        
-        # ترکیب نهایی با هشتگ
         final_caption = f"{original_text}\n\n{translated_text}\n\n#سیاسی"
         
     except Exception as e:
         print(f"⚠️ خطا در ترجمه: {e}")
-        # اگر ترجمه خطا داد، همان متن اصلی را بدون ترجمه بفرست
         final_caption = f"📰 {article['title']}\n{article['lead']}\n\n#سیاسی"
     
-    # ارسال به تلگرام
     if article["img_url"]:
         send_url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
         payload = {
@@ -157,7 +149,7 @@ def run_once():
         article_data = extract_article_detail(link)
         if article_data:
             send_to_telegram(article_data)
-            time.sleep(3)  # تأخیر بیشتر برای جلوگیری از محدودیت ترجمه
+            time.sleep(3)
     
     print("✅ عملیات امروز انجام شد!")
 
