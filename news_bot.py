@@ -8,12 +8,12 @@ import json
 BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-# ========== مشخصات سایت تسنیم - بخش سیاسی ==========
+# ========== مشخصات سایت تسنیم - بخش سیاسی (آدرس اصلاح شده) ==========
 SITE_CONFIG = {
     "name": "تسنیم - سیاسی",
-    "url": "https://www.tasnimnews.ir/fa/news/1392/08/18/",
-    "article_selector": "article.col-xs-6",
-    "link_selector": "h2 a",
+    "url": "https://www.tasnimnews.com/fa/service/politics",  # آدرس درست و زنده
+    "article_selector": "div.item",  # سلکتور هر خبر در صفحه جدید
+    "link_selector": "div.item a",   # سلکتور لینک خبر
     "title_selector": "h1.entry-title",
     "lead_selector": "div.summary p, div.lead p",
     "image_selector": "div.article-image img",
@@ -51,7 +51,7 @@ def fetch_tasnim_news():
                 href = link_tag.get("href")
                 if href:
                     if not href.startswith("http"):
-                        href = "https://www.tasnimnews.ir" + href
+                        href = "https://www.tasnimnews.com" + href
                     news_list.append(href)
         return news_list
     except Exception as e:
@@ -75,7 +75,7 @@ def extract_article_detail(url):
         img_tag = soup.select_one("div.article-image img")
         img_url = img_tag.get("src") if img_tag else None
         if img_url and not img_url.startswith("http"):
-            img_url = "https://www.tasnimnews.ir" + img_url
+            img_url = "https://www.tasnimnews.com" + img_url
         
         body_paragraphs = soup.select("div.article-body p")
         full_text = " ".join([p.get_text(strip=True) for p in body_paragraphs[:3]])
